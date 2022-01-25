@@ -82,13 +82,10 @@ contract Apes is Ownable, ReentrancyGuard, ERC721 {
     function _mint(uint256 _numToMint) internal {
         require(_numToMint <= MAX_MINTABLE_AT_ONCE, "Minting too many at once.");
 
-        uint256 updatedNumAvailableTokens = _numAvailableTokens;
         for (uint256 i = 0; i < _numToMint; i++) {
             uint256 newTokenId = useRandomAvailableToken(_numToMint, i);
             _safeMint(msg.sender, newTokenId + 10000);
-            updatedNumAvailableTokens--;
         }
-        _numAvailableTokens = updatedNumAvailableTokens;
     }
 
     function useRandomAvailableToken(uint256 _numToFetch, uint256 _i)
