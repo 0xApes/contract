@@ -12,22 +12,24 @@ async function main() {
   console.log("signer:", await signer.getAddress());
 
   /**
-   *  Deploy Native Punks
+   *  Deploy
    */
-  const nativePunks = await ethers.getContractFactory("Apes", {
+  const market = await ethers.getContractFactory("ApesMarket", {
     signer: (await ethers.getSigners())[0],
   });
 
-  const contract = await nativePunks.deploy();
+  const contract = await market.deploy(
+    "0xdD40dF4712BDF9c6FeFA9d0dD2AB7E90DeFb8273"
+  );
   await contract.deployed();
 
   console.log("contract deployed to:", contract.address);
 
-  await sleep(60);
+  await sleep(300);
   await hre.run("verify:verify", {
     address: contract.address,
-    contract: "contracts/Apes.sol:Apes",
-    constructorArguments: [],
+    contract: "contracts/ApesMarket.sol:ApesMarket",
+    constructorArguments: ["0xdD40dF4712BDF9c6FeFA9d0dD2AB7E90DeFb8273"],
   });
 
   console.log("contract verified");

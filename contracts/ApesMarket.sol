@@ -20,11 +20,14 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
     }
 
     struct Bid {
-        bool hasBid;
         uint id;
         address bidder;
         uint value;
     }
+
+    // Admin Fee
+    uint public adminPercent = 2;
+    uint public adminPending;
 
     // A record of apess that are offered for sale at a specific minimum value, and perhaps to a specific person
     mapping (uint => Offer) public offers;
@@ -32,13 +35,10 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
     // A record of the highest apes bid
     mapping (uint => Bid) public bids;
 
-    // A record of pending ETH withdrawls by address
-    mapping (address => uint) public pendingWithdrawals;
-
     event Offered(uint indexed id, uint minValue, address indexed toAddress);
     event BidEntered(uint indexed id, uint value, address indexed fromAddress);
-    event BidWithdrawn(uint indexed id, uint value, address indexed fromAddress);
-    event Bought(uint indexed id, uint value, address indexed fromAddress, address indexed toAddress);
+    event BidWithdrawn(uint indexed id, uint value);
+    event Bought(uint indexed id, uint value, address indexed fromAddress, address indexed toAddress, bool isInstant);
     event Cancelled(uint indexed id);
 
     /* Initializes contract with an instance of 0xApes contract, and sets deployer as owner */
@@ -56,7 +56,7 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
     }
 
     /* Returns the 0xApes contract address currently being used */
-    function apessAddress() public view returns (address) {
+    function apessAddress() external view returns (address) {
         return address(apesContract);
     }
 
@@ -66,20 +66,33 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
         apesContract = IERC721(newAddress);
     }
 
+    /* Allows the owner of the contract to set a new Admin Fee Percentage */
+    function setAdminPercent(uint _percent) external onlyOwner {
+        require(_percent >= 0 && _percent < 50, "invalid percent");
+        adminPercent = _percent;
+    }
+
+    /*Allows the owner of the contract to withdraw pending ETH */
+    function withdraw() external onlyOwner nonReentrant() {
+        uint amount = adminPending;
+        adminPending = 0;
+        _safeTransferETH(msg.sender, amount);
+    }
+
     /* Allows the owner of a 0xApes to stop offering it for sale */
-    function cancelForSale(uint id) external onlyApesOwner(id) nonReentrant() {
+    function cancelForSale(uint id) external onlyApesOwner(id) {
         offers[id] = Offer(false, id, msg.sender, 0, address(0x0));
         emit Cancelled(id);
     }
 
     /* Allows a 0xApes owner to offer it for sale */
-    function offerForSale(uint id, uint minSalePrice) external onlyApesOwner(id) whenNotPaused nonReentrant()  {
+    function offerForSale(uint id, uint minSalePrice) external onlyApesOwner(id) whenNotPaused {
         offers[id] = Offer(true, id, msg.sender, minSalePrice, address(0x0));
         emit Offered(id, minSalePrice, address(0x0));
     }
 
     /* Allows a 0xApes owner to offer it for sale to a specific address */
-    function offerForSaleToAddress(uint id, uint minSalePrice, address toAddress) external onlyApesOwner(id) whenNotPaused nonReentrant() {
+    function offerForSaleToAddress(uint id, uint minSalePrice, address toAddress) external onlyApesOwner(id) whenNotPaused {
         offers[id] = Offer(true, id, msg.sender, minSalePrice, toAddress);
         emit Offered(id, minSalePrice, toAddress);
     }
@@ -88,49 +101,49 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
     /* Allows users to buy a 0xApes offered for sale */
     function buyApes(uint id) payable external whenNotPaused nonReentrant() {
         Offer memory offer = offers[id];
-        require (offer.isForSale, 'ape is not for sale'); // apes not actually for sale
+        uint amount = msg.value;
+        require (offer.isForSale, 'ape is not for sale'); 
         require (offer.onlySellTo == address(0x0) || offer.onlySellTo != msg.sender, "this offer is not for you");                
-        require (msg.value == offer.minValue, 'not enough ether');          // Didn't send enough ETH
+        require (amount == offer.minValue, 'not enough ether'); 
         address seller = offer.seller;
         require (seller != msg.sender, 'seller == msg.sender');
-        require (seller != apesContract.ownerOf(id), 'seller no longer owner of apes'); // Seller no longer owner of apes
-
+        require (seller == apesContract.ownerOf(id), 'seller no longer owner of apes');
 
         offers[id] = Offer(false, id, msg.sender, 0, address(0x0));
+        
+        // Transfer 0xApes to msg.sender from seller.
         apesContract.safeTransferFrom(seller, msg.sender, id);
-        pendingWithdrawals[seller] += msg.value;
-        emit Bought(id, msg.value, seller, msg.sender);
+        
+        // Transfer ETH to seller!
+        uint commission = 0;
+        if(adminPercent > 0) {
+            commission = amount * adminPercent / 100;
+            adminPending += commission;
+        }
 
-        // Check for the case where there is a bid from the new owner and refund it.
-        // Any other bid can stay in place.
+        _safeTransferETH(seller, amount - commission);
+        
+        emit Bought(id, amount, seller, msg.sender, true);
+
+        // refund bid if new owner is buyer!
         Bid memory bid = bids[id];
         if (bid.bidder == msg.sender) {
-            // Kill bid and refund value
-            pendingWithdrawals[msg.sender] += bid.value;
-            bids[id] = Bid(false, id, address(0x0), 0);
+            _safeTransferETH(bid.bidder, bid.value); 
+            bids[id] = Bid(id, address(0x0), 0);
         }
     }
 
-
-
-    /* Allows users to retrieve ETH from sales */
-    function withdraw() external nonReentrant() {
-        uint amount = pendingWithdrawals[msg.sender];
-        pendingWithdrawals[msg.sender] = 0;
-        _safeTransferETH(msg.sender, amount);
-    }
-
     /* Allows users to enter bids for any 0xApes */
-    function enterBid(uint id) payable external whenNotPaused nonReentrant() {
+    function placeBid(uint id) payable external whenNotPaused nonReentrant() {
         require (apesContract.ownerOf(id) != msg.sender, 'you already own this apes');
         require (msg.value != 0, 'cannot enter bid of zero');
         Bid memory existing = bids[id];
         require (msg.value > existing.value, 'your bid is too low');
         if (existing.value > 0) {
-            // Refund the failing bid
-            pendingWithdrawals[existing.bidder] += existing.value;
+            // Refund existing bid
+            _safeTransferETH(existing.bidder, existing.value); 
         }
-        bids[id] = Bid(true, id, msg.sender, msg.value);
+        bids[id] = Bid(id, msg.sender, msg.value);
         emit BidEntered(id, msg.value, msg.sender);
     }
 
@@ -138,27 +151,37 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
     function acceptBid(uint id, uint minPrice) external onlyApesOwner(id) whenNotPaused nonReentrant() {
         address seller = msg.sender;
         Bid memory bid = bids[id];
-        require (bid.value != 0, 'cannot enter bid of zero');
-        require (bid.value >= minPrice, 'your bid is too low');
+        uint amount = bid.value;
+        require (amount != 0, 'cannot enter bid of zero');
+        require (amount >= minPrice, 'your bid is too low');
 
         address bidder = bid.bidder;
         require (seller != bidder, 'you already own this token');
         offers[id] = Offer(false, id, bidder, 0, address(0x0));
-        uint amount = bid.value;
-        bids[id] = Bid(false, id, address(0x0), 0);
+        bids[id] = Bid(id, address(0x0), 0);
+ 
+        // Transfer 0xApe to  Bidder
         apesContract.safeTransferFrom(msg.sender, bidder, id);
-        pendingWithdrawals[seller] += amount;
-        emit Bought(id, bid.value, seller, bidder);
+
+        // Transfer ETH to seller!
+        uint commission = 0;
+        if(adminPercent > 0) {
+            commission = amount * adminPercent / 100;
+            adminPending += commission;
+        }
+
+        _safeTransferETH(seller, amount - commission);
+       
+        emit Bought(id, bid.value, seller, bidder, false);
     }
 
     /* Allows bidders to withdraw their bids */
     function withdrawBid(uint id) external nonReentrant() {
         Bid memory bid = bids[id];
-        require(bid.bidder != msg.sender, 'the bidder is not message sender');
-        emit BidWithdrawn(id, bid.value, msg.sender);
+        require(bid.bidder == msg.sender, 'the bidder is not msg sender');
         uint amount = bid.value;
-        bids[id] = Bid(false, id, address(0x0), 0);
-        // Refund the bid money
+        emit BidWithdrawn(id, amount);
+        bids[id] = Bid(id, address(0x0), 0);
         _safeTransferETH(msg.sender, amount);
     }
 
