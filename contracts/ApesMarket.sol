@@ -103,7 +103,7 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
         Offer memory offer = offers[id];
         uint amount = msg.value;
         require (offer.isForSale, 'ape is not for sale'); 
-        require (offer.onlySellTo == address(0x0) || offer.onlySellTo != msg.sender, "this offer is not for you");                
+        require (offer.onlySellTo == address(0x0) || offer.onlySellTo == msg.sender, "this offer is not for you");                
         require (amount == offer.minValue, 'not enough ether'); 
         address seller = offer.seller;
         require (seller != msg.sender, 'seller == msg.sender');
