@@ -19,7 +19,7 @@ async function main() {
   });
 
   const contract = await market.deploy(
-    "0xdD40dF4712BDF9c6FeFA9d0dD2AB7E90DeFb8273"
+    "0x129E94b353666e760eE417bc05221D7769E9A07e"
   );
   await contract.deployed();
 
@@ -29,7 +29,7 @@ async function main() {
   await hre.run("verify:verify", {
     address: contract.address,
     contract: "contracts/ApesMarket.sol:ApesMarket",
-    constructorArguments: ["0xdD40dF4712BDF9c6FeFA9d0dD2AB7E90DeFb8273"],
+    constructorArguments: ["0x129E94b353666e760eE417bc05221D7769E9A07e"],
   });
 
   console.log("contract verified");
