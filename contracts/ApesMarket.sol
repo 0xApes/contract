@@ -8,6 +8,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 
 contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
+    uint256 constant public PERCENTS_DIVIDER = 10000;
 
     IERC721 apesContract;     // instance of the Apes contract
 
@@ -26,7 +27,7 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
     }
 
     // Admin Fee
-    uint public adminPercent = 2;
+    uint public adminPercent = 200;
     uint public adminPending;
 
     // A record of apess that are offered for sale at a specific minimum value, and perhaps to a specific person
@@ -38,6 +39,7 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
     event Offered(uint indexed id, uint minValue, address indexed toAddress);
     event BidEntered(uint indexed id, uint value, address indexed fromAddress);
     event BidWithdrawn(uint indexed id, uint value);
+    event BidCancelled(uint indexed id, uint value, address indexed bidder);
     event Bought(uint indexed id, uint value, address indexed fromAddress, address indexed toAddress, bool isInstant);
     event Cancelled(uint indexed id);
 
@@ -68,7 +70,7 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
 
     /* Allows the owner of the contract to set a new Admin Fee Percentage */
     function setAdminPercent(uint _percent) external onlyOwner {
-        require(_percent >= 0 && _percent < 50, "invalid percent");
+        require(_percent < 5000, "invalid percent");
         adminPercent = _percent;
     }
 
@@ -117,7 +119,7 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
         // Transfer ETH to seller!
         uint commission = 0;
         if(adminPercent > 0) {
-            commission = amount * adminPercent / 100;
+            commission = amount * adminPercent / PERCENTS_DIVIDER;
             adminPending += commission;
         }
 
@@ -129,6 +131,7 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
         Bid memory bid = bids[id];
         if (bid.bidder == msg.sender) {
             _safeTransferETH(bid.bidder, bid.value); 
+            emit BidCancelled(id, bid.value, bid.bidder);
             bids[id] = Bid(id, address(0x0), 0);
         }
     }
@@ -142,6 +145,7 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
         if (existing.value > 0) {
             // Refund existing bid
             _safeTransferETH(existing.bidder, existing.value); 
+            emit BidCancelled(id, existing.value, existing.bidder);
         }
         bids[id] = Bid(id, msg.sender, msg.value);
         emit BidEntered(id, msg.value, msg.sender);
@@ -153,7 +157,7 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
         Bid memory bid = bids[id];
         uint amount = bid.value;
         require (amount != 0, 'cannot enter bid of zero');
-        require (amount >= minPrice, 'your bid is too low');
+        require (amount >= minPrice, 'the bid is too low');
 
         address bidder = bid.bidder;
         require (seller != bidder, 'you already own this token');
@@ -166,7 +170,7 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
         // Transfer ETH to seller!
         uint commission = 0;
         if(adminPercent > 0) {
-            commission = amount * adminPercent / 100;
+            commission = amount * adminPercent / PERCENTS_DIVIDER;
             adminPending += commission;
         }
 
