@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
 
 
 contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
@@ -30,7 +31,7 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
     uint public adminPercent = 200;
     uint public adminPending;
 
-    // A record of apess that are offered for sale at a specific minimum value, and perhaps to a specific person
+    // A record of apes that are offered for sale at a specific minimum value, and perhaps to a specific person
     mapping (uint => Offer) public offers;
 
     // A record of the highest apes bid
@@ -58,7 +59,7 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
     }
 
     /* Returns the 0xApes contract address currently being used */
-    function apessAddress() external view returns (address) {
+    function apesAddress() external view returns (address) {
         return address(apesContract);
     }
 
@@ -167,13 +168,15 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
         // Transfer 0xApe to  Bidder
         apesContract.safeTransferFrom(msg.sender, bidder, id);
 
-        // Transfer ETH to seller!
+        
         uint commission = 0;
+        // Transfer Commission!
         if(adminPercent > 0) {
             commission = amount * adminPercent / PERCENTS_DIVIDER;
             adminPending += commission;
         }
 
+        // Transfer ETH to seller!
         _safeTransferETH(seller, amount - commission);
        
         emit Bought(id, bid.value, seller, bidder, false);
@@ -191,9 +194,8 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
 
     receive() external payable {}
 
-    function _safeTransferETH(address to, uint256 value) internal returns(bool) {
-		(bool success, ) = to.call{value: value}(new bytes(0));
-		return success;
+    function _safeTransferETH(address to, uint256 value) internal {
+		Address.sendValue(payable(to), value);
     }
 
     modifier onlyApesOwner(uint256 tokenId) {
