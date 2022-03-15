@@ -71,7 +71,7 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
 
     /* Allows the owner of the contract to set a new Admin Fee Percentage */
     function setAdminPercent(uint _percent) external onlyOwner {
-        require(_percent < 5000, "invalid percent");
+        require(_percent < 500, "invalid percent");
         adminPercent = _percent;
     }
 
@@ -116,14 +116,15 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
         
         // Transfer 0xApes to msg.sender from seller.
         apesContract.safeTransferFrom(seller, msg.sender, id);
-        
-        // Transfer ETH to seller!
+
+        // Transfer commission to admin!
         uint commission = 0;
         if(adminPercent > 0) {
             commission = amount * adminPercent / PERCENTS_DIVIDER;
             adminPending += commission;
         }
 
+        // Transfer ETH to seller!
         _safeTransferETH(seller, amount - commission);
         
         emit Bought(id, amount, seller, msg.sender, true);
@@ -168,7 +169,6 @@ contract ApesMarket is ReentrancyGuard, Pausable, Ownable {
         // Transfer 0xApe to  Bidder
         apesContract.safeTransferFrom(msg.sender, bidder, id);
 
-        
         uint commission = 0;
         // Transfer Commission!
         if(adminPercent > 0) {
